@@ -10,6 +10,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a // indirect
 	github.com/coreos/ignition v0.33.0 // indirect
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
+	github.com/golang/mock v1.2.0
 	github.com/gophercloud/gophercloud v0.6.1-0.20191025185032-6ad562af8c1f
 	github.com/gophercloud/utils v0.0.0-20190124231947-9c3b9f2457ef
 	github.com/openshift/client-go v0.0.0-20200320150128-a906f3d8e723
@@ -26,6 +27,6 @@ require (
 	k8s.io/cluster-bootstrap v0.0.0-20190202014938-c9acc0c1bea2
 	k8s.io/klog v1.0.0
 	sigs.k8s.io/controller-runtime v0.5.1-0.20200330174416-a11a908d91e0
-	sigs.k8s.io/controller-tools v0.3.0 // indirect
+	sigs.k8s.io/controller-tools v0.3.0
 	sigs.k8s.io/yaml v1.2.0
 )
