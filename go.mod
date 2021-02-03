@@ -10,6 +10,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a // indirect
 	github.com/coreos/ignition v0.33.0 // indirect
 	github.com/go-logr/logr v0.2.1
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gophercloud/gophercloud v0.14.0
 	github.com/gophercloud/utils v0.0.0-20201221031838-d93cf4b3fa50
 	github.com/onsi/ginkgo v1.14.1
