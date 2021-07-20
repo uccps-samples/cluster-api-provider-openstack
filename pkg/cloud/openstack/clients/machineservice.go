@@ -707,8 +707,28 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 		}
 
 		if bootfromvolume.SourceType(config.RootVolume.SourceType) == bootfromvolume.SourceImage {
+			// Name the volume after the instance
+			volumeName := name
+
 			// if source type is "image" then we have to create a volume from the image first
-			klog.Infof("Creating a bootable volume from image %v.", config.RootVolume.SourceUUID)
+			klog.Infof("Creating bootable volume with name %q from image %v.", volumeName, config.RootVolume.SourceUUID)
+
+			// Deleting any volumes with the same name, as they may
+			// be leftovers from a previous failed try.
+			{
+				volumeIDs, err := volumeIDsFromName(is.volumeClient, volumeName)
+				if err != nil {
+					klog.Infof("unable to list volumes with name %q: %v.", volumeName, err)
+				}
+
+				for _, volumeID := range volumeIDs {
+					if err := volumes.Delete(is.volumeClient, volumeID, nil).ExtractErr(); err != nil {
+						klog.Infof("unable to delete volume with ID %q: %v.", volumeID, err)
+					} else {
+						klog.Infof("deleted volume with name %q and ID %q", volumeName, volumeID)
+					}
+				}
+			}
 
 			imageID, err := imageutils.IDFromName(is.imagesClient, config.RootVolume.SourceUUID)
 			if err != nil {
@@ -717,11 +737,10 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 
 			// Create a volume first
 			volumeCreateOpts := volumes.CreateOpts{
-				Size:       config.RootVolume.Size,
-				VolumeType: config.RootVolume.VolumeType,
-				ImageID:    imageID,
-				// The same name as the instance
-				Name:             name,
+				Size:             config.RootVolume.Size,
+				VolumeType:       config.RootVolume.VolumeType,
+				ImageID:          imageID,
+				Name:             volumeName,
 				AvailabilityZone: config.RootVolume.Zone,
 			}
 
