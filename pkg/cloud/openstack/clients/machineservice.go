@@ -475,6 +475,8 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 		}
 	}
 
+	var cleanupOperationsInCaseOfServerCreationFailure []func() error
+
 	// Set default Tags
 	machineTags := []string{
 		"cluster-api-provider-openstack",
@@ -730,6 +732,9 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 				return nil, fmt.Errorf("Create bootable volume err: %v", err)
 			}
 
+			cleanupOperationsInCaseOfServerCreationFailure = append(cleanupOperationsInCaseOfServerCreationFailure, func() error {
+				return volumes.Delete(is.volumeClient, volume.ID, nil).ExtractErr()
+			})
 			volumeID = volume.ID
 
 			err = volumes.WaitForStatus(is.volumeClient, volumeID, "available", 300)
@@ -820,7 +825,12 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 		KeyName:           keyName,
 	}).Extract()
 	if err != nil {
-		return nil, fmt.Errorf("Create new server err: %v", err)
+		for _, cleanup := range cleanupOperationsInCaseOfServerCreationFailure {
+			if e := cleanup(); e != nil {
+				err = fmt.Errorf("%w. Additionally: %v", err, e)
+			}
+		}
+		return nil, err
 	}
 
 	is.computeClient.Microversion = ""
