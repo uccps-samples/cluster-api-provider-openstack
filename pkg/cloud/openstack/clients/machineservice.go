@@ -900,7 +900,7 @@ func deduplicateList(list []string) []string {
 }
 
 func getServerGroupsByName(computeClient *gophercloud.ServiceClient, name string) ([]servergroups.ServerGroup, error) {
-	pages, err := servergroups.List(computeClient).AllPages()
+	pages, err := servergroups.List(computeClient, nil).AllPages()
 	if err != nil {
 		return nil, err
 	}
