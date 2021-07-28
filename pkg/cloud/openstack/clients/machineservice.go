@@ -329,8 +329,7 @@ func getSubnetsByFilter(is *InstanceService, opts *subnets.ListOpts) ([]subnets.
 }
 
 func getOrCreatePort(is *InstanceService, name string, portOpts openstackconfigv1.PortOpts) (*ports.Port, error) {
-	var portName string
-	portName = name
+	portName := name
 	if portOpts.NameSuffix != "" {
 		portName = name + "-" + portOpts.NameSuffix
 	}
