@@ -375,7 +375,7 @@ func getOrCreatePort(is *InstanceService, name string, portOpts openstackconfigv
 			CreateOptsBuilder: createOpts,
 			HostID:            portOpts.HostID,
 			VNICType:          portOpts.VNICType,
-			Profile:           nil,
+			Profile:           getPortProfile(portOpts.Profile),
 		}).Extract()
 		if err != nil {
 			return nil, err
@@ -403,6 +403,21 @@ func getOrCreatePort(is *InstanceService, name string, portOpts openstackconfigv
 	}
 
 	return nil, fmt.Errorf("multiple ports found with name \"%s\"", portName)
+}
+
+func getPortProfile(p map[string]string) map[string]interface{} {
+	portProfile := make(map[string]interface{})
+	for k, v := range p {
+		portProfile[k] = v
+	}
+	// We need return nil if there is no profiles
+	// to have backward compatible defaults.
+	// To set profiles, your tenant needs this permission:
+	// rule:create_port and rule:create_port:binding:profile
+	if len(portProfile) == 0 {
+		return nil
+	}
+	return portProfile
 }
 
 func listPorts(is *InstanceService, opts ports.ListOpts) ([]ports.Port, error) {
@@ -572,6 +587,7 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 					NameSuffix:   net.UUID,
 					Tags:         net.PortTags,
 					VNICType:     net.VNICType,
+					Profile:      net.Profile,
 					PortSecurity: net.PortSecurity,
 				})
 			}
@@ -598,6 +614,7 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 						FixedIPs:     []openstackconfigv1.FixedIPs{{SubnetID: snet.ID}},
 						Tags:         append(net.PortTags, snetParam.PortTags...),
 						VNICType:     net.VNICType,
+						Profile:      net.Profile,
 						PortSecurity: portSecurity,
 					})
 				}
