@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -67,6 +67,7 @@ type controllerManager struct {
 	// leaderElectionRunnables is the set of Controllers that the controllerManager injects deps into and Starts.
 	// These Runnables are managed by lead election.
 	leaderElectionRunnables []Runnable
+
 	// nonLeaderElectionRunnables is the set of webhook servers that the controllerManager injects deps into and Starts.
 	// These Runnables will not be blocked by lead election.
 	nonLeaderElectionRunnables []Runnable
@@ -250,8 +251,7 @@ func (cm *controllerManager) AddMetricsExtraHandler(path string, handler http.Ha
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	_, found := cm.metricsExtraHandlers[path]
-	if found {
+	if _, found := cm.metricsExtraHandlers[path]; found {
 		return fmt.Errorf("can't register extra handler by duplicate path %q on metrics http server", path)
 	}
 
@@ -260,7 +260,7 @@ func (cm *controllerManager) AddMetricsExtraHandler(path string, handler http.Ha
 	return nil
 }
 
-// AddHealthzCheck allows you to add Healthz checker
+// AddHealthzCheck allows you to add Healthz checker.
 func (cm *controllerManager) AddHealthzCheck(name string, check healthz.Checker) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -281,7 +281,7 @@ func (cm *controllerManager) AddHealthzCheck(name string, check healthz.Checker)
 	return nil
 }
 
-// AddReadyzCheck allows you to add Readyz checker
+// AddReadyzCheck allows you to add Readyz checker.
 func (cm *controllerManager) AddReadyzCheck(name string, check healthz.Checker) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -450,7 +450,7 @@ func (cm *controllerManager) Start(ctx context.Context) (err error) {
 				// Utilerrors.Aggregate allows to use errors.Is for all contained errors
 				// whereas fmt.Errorf allows wrapping at most one error which means the
 				// other one can not be found anymore.
-				err = utilerrors.NewAggregate([]error{err, stopErr})
+				err = kerrors.NewAggregate([]error{err, stopErr})
 			} else {
 				err = stopErr
 			}
@@ -577,10 +577,27 @@ func (cm *controllerManager) startNonLeaderElectionRunnables() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
+	// First start any webhook servers, which includes conversion, validation, and defaulting
+	// webhooks that are registered.
+	//
+	// WARNING: Webhooks MUST start before any cache is populated, otherwise there is a race condition
+	// between conversion webhooks and the cache sync (usually initial list) which causes the webhooks
+	// to never start because no cache can be populated.
+	for _, c := range cm.nonLeaderElectionRunnables {
+		if _, ok := c.(*webhook.Server); ok {
+			cm.startRunnable(c)
+		}
+	}
+
+	// Start and wait for caches.
 	cm.waitForCache(cm.internalCtx)
 
 	// Start the non-leaderelection Runnables after the cache has synced
 	for _, c := range cm.nonLeaderElectionRunnables {
+		if _, ok := c.(*webhook.Server); ok {
+			continue
+		}
+
 		// Controllers block, but we want to return an error if any have an error starting.
 		// Write any Start errors to a channel so we can return them
 		cm.startRunnable(c)
