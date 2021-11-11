@@ -23,7 +23,7 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	machinev1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	machinev1 "github.com/openshift/api/machine/v1beta1"
 	"github.com/openshift/machine-api-operator/pkg/metrics"
 	"k8s.io/klog/klogr"
 	"k8s.io/klog/v2"
