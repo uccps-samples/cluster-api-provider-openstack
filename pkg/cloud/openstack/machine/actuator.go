@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"time"
@@ -28,10 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/client-go/tools/record"
 
-	"github.com/gophercloud/gophercloud"
-	gophercloudopenstack "github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/networks"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 	apierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
 	"github.com/openshift/machine-api-operator/pkg/util"
@@ -340,132 +335,56 @@ func (oc *OpenstackClient) Exists(ctx context.Context, machine *machinev1.Machin
 	return instance != nil, err
 }
 
-func getIPsFromInstance(instance *clients.Instance) (map[string]string, error) {
-	if instance.AccessIPv4 != "" && net.ParseIP(instance.AccessIPv4) != nil {
-		return map[string]string{
-			"": instance.AccessIPv4,
-		}, nil
-	}
+func getIPsFromInstance(instance *clients.Instance) ([]corev1.NodeAddress, error) {
 	type networkInterface struct {
 		Address string  `json:"addr"`
 		Version float64 `json:"version"`
 		Type    string  `json:"OS-EXT-IPS:type"`
 	}
-	addrMap := map[string]string{}
 
-	for networkName, b := range instance.Addresses {
+	var nodeAddresses []corev1.NodeAddress
+
+	// This is heavily based on the related upstream code:
+	// https://github.com/kubernetes-sigs/cluster-api-provider-openstack/blob/244d31b1d583ee9e760d2bc2f18a80e1fc61f5eb/pkg/cloud/services/compute/instance_types.go#L131-L183
+	for _, b := range instance.Addresses {
 		list, err := json.Marshal(b)
 		if err != nil {
-			return nil, fmt.Errorf("extract IP from instance err: %v", err)
+			return nil, fmt.Errorf("error marshalling addresses for instance %s: %w", instance.ID, err)
 		}
-		var networks []interface{}
-		json.Unmarshal(list, &networks)
-		for _, network := range networks {
-			var netInterface networkInterface
-			b, _ := json.Marshal(network)
-			json.Unmarshal(b, &netInterface)
-			if netInterface.Version == 4.0 {
-				addrMap[networkName] = netInterface.Address
+		var interfaceList []networkInterface
+		err = json.Unmarshal(list, &interfaceList)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshalling addresses for instance %s: %w", instance.ID, err)
+		}
+
+		for i := range interfaceList {
+			address := &interfaceList[i]
+
+			// Only consider IPv4
+			if address.Version != 4 {
+				klog.V(6).Info("Ignoring IPv%d address %s: only IPv4 is supported", address.Version, address.Address)
+				continue
 			}
-		}
-	}
-	if len(addrMap) == 0 {
-		return nil, fmt.Errorf("extract IP from instance err")
-	}
 
-	return addrMap, nil
-}
+			var addressType corev1.NodeAddressType
+			switch address.Type {
+			case "floating":
+				addressType = corev1.NodeExternalIP
+			case "fixed":
+				addressType = corev1.NodeInternalIP
+			default:
+				klog.V(6).Info("Ignoring address %s with unknown type '%s'", address.Address, address.Type)
+				continue
+			}
 
-func getNetworkBySubnet(client *gophercloud.ServiceClient, subnetID string) (*networks.Network, error) {
-	subnet, err := subnets.Get(client, subnetID).Extract()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get subnet %s, %v", subnetID, err)
-	}
-
-	network, err := networks.Get(client, subnet.NetworkID).Extract()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get network %s, %v", subnet.NetworkID, err)
-	}
-	return network, nil
-}
-
-func getNetworkByPrimaryNetworkTag(client *gophercloud.ServiceClient, primaryNetworkTag string) (*networks.Network, error) {
-	opts := networks.ListOpts{
-		Tags: primaryNetworkTag,
-	}
-
-	allPages, err := networks.List(client, opts).AllPages()
-	if err != nil {
-		return nil, err
-	}
-
-	allNetworks, err := networks.ExtractNetworks(allPages)
-	if err != nil {
-		return nil, err
-	}
-
-	switch len(allNetworks) {
-	case 0:
-		return nil, fmt.Errorf("There are no networks with primary network tag: %v", primaryNetworkTag)
-	case 1:
-		return &allNetworks[0], nil
-	}
-	return nil, fmt.Errorf("Too many networks with the same primary network tag: %v", primaryNetworkTag)
-}
-
-func (oc *OpenstackClient) getPrimaryMachineIP(mapAddr map[string]string, machine *machinev1.Machine, clusterInfraName string) (string, error) {
-	// If there is only one network in the list, we consider it as the primary one
-	if len(mapAddr) == 1 {
-		for _, addr := range mapAddr {
-			return addr, nil
+			nodeAddresses = append(nodeAddresses, corev1.NodeAddress{
+				Type:    addressType,
+				Address: address.Address,
+			})
 		}
 	}
 
-	config, err := openstackconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
-	if err != nil {
-		return "", fmt.Errorf("Invalid provider spec for machine %s", machine.Name)
-	}
-
-	// PrimarySubnet should always be set in the machine api in 4.6
-	primarySubnet := config.PrimarySubnet
-
-	cloud, err := clients.GetCloud(oc.params.KubeClient, machine)
-	if err != nil {
-		return "", err
-	}
-	provider, err := clients.GetProviderClient(cloud, clients.GetCACertificate(oc.params.KubeClient))
-	if err != nil {
-		return "", err
-	}
-	netClient, err := gophercloudopenstack.NewNetworkV2(provider, gophercloud.EndpointOpts{
-		Region: cloud.RegionName,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	var primaryNetwork *networks.Network
-	if primarySubnet != "" {
-		primaryNetwork, err = getNetworkBySubnet(netClient, primarySubnet)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		// Support legacy versions
-		primaryNetworkTag := clusterInfraName + "-primaryClusterNetwork"
-		primaryNetwork, err = getNetworkByPrimaryNetworkTag(netClient, primaryNetworkTag)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	for networkName, addr := range mapAddr {
-		if networkName == primaryNetwork.Name {
-			return addr, nil
-		}
-	}
-
-	return "", fmt.Errorf("No primary network was found for the machine %v", machine.Name)
+	return nodeAddresses, nil
 }
 
 // If the OpenstackClient has a client for updating Machine objects, this will set
@@ -517,41 +436,29 @@ func (oc *OpenstackClient) updateAnnotation(machine *machinev1.Machine, instance
 		machine.ObjectMeta.Annotations = make(map[string]string)
 	}
 	machine.ObjectMeta.Annotations[OpenstackIdAnnotationKey] = instance.ID
-	mapAddr, err := getIPsFromInstance(instance)
-	if err != nil {
-		return err
-	}
-
-	primaryIP, err := oc.getPrimaryMachineIP(mapAddr, machine, clusterInfraName)
-	if err != nil {
-		return err
-	}
-	klog.Infof("Found the primary address for the machine %v: %v", machine.Name, primaryIP)
-
 	machine.ObjectMeta.Annotations[MachineInstanceStateAnnotationName] = instance.Status
 
 	if err := oc.client.Update(context.TODO(), machine); err != nil {
 		return err
 	}
 
-	networkAddresses := []corev1.NodeAddress{}
-	networkAddresses = append(networkAddresses, corev1.NodeAddress{
-		Type:    corev1.NodeInternalIP,
-		Address: primaryIP,
-	})
+	nodeAddresses, err := getIPsFromInstance(instance)
+	if err != nil {
+		return err
+	}
 
-	networkAddresses = append(networkAddresses, corev1.NodeAddress{
+	nodeAddresses = append(nodeAddresses, corev1.NodeAddress{
 		Type:    corev1.NodeHostName,
 		Address: machine.Name,
 	})
 
-	networkAddresses = append(networkAddresses, corev1.NodeAddress{
+	nodeAddresses = append(nodeAddresses, corev1.NodeAddress{
 		Type:    corev1.NodeInternalDNS,
 		Address: machine.Name,
 	})
 
 	machineCopy := machine.DeepCopy()
-	machineCopy.Status.Addresses = networkAddresses
+	machineCopy.Status.Addresses = nodeAddresses
 
 	if !equality.Semantic.DeepEqual(machine.Status.Addresses, machineCopy.Status.Addresses) {
 		if err := oc.client.Status().Update(context.TODO(), machineCopy); err != nil {
