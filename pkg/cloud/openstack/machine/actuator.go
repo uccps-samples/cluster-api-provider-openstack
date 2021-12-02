@@ -67,6 +67,8 @@ const (
 
 	// ErrorState is assigned to the machine if its instance has been destroyed
 	ErrorState = "ERROR"
+
+	OpenstackIdAnnotationKey = "openstack-resourceId"
 )
 
 // Event Action Constants
@@ -78,20 +80,18 @@ const (
 )
 
 type OpenstackClient struct {
-	params openstack.ActuatorParams
-	scheme *runtime.Scheme
-	client client.Client
-	*openstack.DeploymentClient
+	params        openstack.ActuatorParams
+	scheme        *runtime.Scheme
+	client        client.Client
 	eventRecorder record.EventRecorder
 }
 
 func NewActuator(params openstack.ActuatorParams) (*OpenstackClient, error) {
 	return &OpenstackClient{
-		params:           params,
-		client:           params.Client,
-		scheme:           params.Scheme,
-		DeploymentClient: openstack.NewDeploymentClient(),
-		eventRecorder:    params.EventRecorder,
+		params:        params,
+		client:        params.Client,
+		scheme:        params.Scheme,
+		eventRecorder: params.EventRecorder,
 	}, nil
 }
 
@@ -308,7 +308,7 @@ func (oc *OpenstackClient) Delete(ctx context.Context, machine *machinev1.Machin
 		return nil
 	}
 
-	id := machine.ObjectMeta.Annotations[openstack.OpenstackIdAnnotationKey]
+	id := machine.ObjectMeta.Annotations[OpenstackIdAnnotationKey]
 	err = machineService.InstanceDelete(id)
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.DeleteMachine(
@@ -516,7 +516,7 @@ func (oc *OpenstackClient) updateAnnotation(machine *machinev1.Machine, instance
 	if machine.ObjectMeta.Annotations == nil {
 		machine.ObjectMeta.Annotations = make(map[string]string)
 	}
-	machine.ObjectMeta.Annotations[openstack.OpenstackIdAnnotationKey] = instance.ID
+	machine.ObjectMeta.Annotations[OpenstackIdAnnotationKey] = instance.ID
 	mapAddr, err := getIPsFromInstance(instance)
 	if err != nil {
 		return err
@@ -528,7 +528,6 @@ func (oc *OpenstackClient) updateAnnotation(machine *machinev1.Machine, instance
 	}
 	klog.Infof("Found the primary address for the machine %v: %v", machine.Name, primaryIP)
 
-	machine.ObjectMeta.Annotations[openstack.OpenstackIPAnnotationKey] = primaryIP
 	machine.ObjectMeta.Annotations[MachineInstanceStateAnnotationName] = instance.Status
 
 	if err := oc.client.Update(context.TODO(), machine); err != nil {
