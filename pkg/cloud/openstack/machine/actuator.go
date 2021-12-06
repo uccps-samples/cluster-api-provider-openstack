@@ -20,19 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
-	"reflect"
 	"strconv"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/client-go/tools/record"
 
-	"github.com/gophercloud/gophercloud"
-	gophercloudopenstack "github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/networks"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 	apierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
 	"github.com/openshift/machine-api-operator/pkg/util"
@@ -68,6 +62,8 @@ const (
 
 	// ErrorState is assigned to the machine if its instance has been destroyed
 	ErrorState = "ERROR"
+
+	OpenstackIdAnnotationKey = "openstack-resourceId"
 )
 
 // Event Action Constants
@@ -79,20 +75,18 @@ const (
 )
 
 type OpenstackClient struct {
-	params openstack.ActuatorParams
-	scheme *runtime.Scheme
-	client client.Client
-	*openstack.DeploymentClient
+	params        openstack.ActuatorParams
+	scheme        *runtime.Scheme
+	client        client.Client
 	eventRecorder record.EventRecorder
 }
 
 func NewActuator(params openstack.ActuatorParams) (*OpenstackClient, error) {
 	return &OpenstackClient{
-		params:           params,
-		client:           params.Client,
-		scheme:           params.Scheme,
-		DeploymentClient: openstack.NewDeploymentClient(),
-		eventRecorder:    params.EventRecorder,
+		params:        params,
+		client:        params.Client,
+		scheme:        params.Scheme,
+		eventRecorder: params.EventRecorder,
 	}, nil
 }
 
@@ -106,15 +100,23 @@ func getTimeout(name string, timeout int) time.Duration {
 	return time.Duration(timeout)
 }
 
+func (oc *OpenstackClient) getClusterInfraName() (string, error) {
+	clusterInfra, err := oc.params.ConfigClient.Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("Failed to retrieve cluster Infrastructure object: %v", err)
+	}
+
+	return clusterInfra.Status.InfrastructureName, nil
+}
+
 func (oc *OpenstackClient) Create(ctx context.Context, machine *machinev1.Machine) error {
 	// First check that provided labels are correct
 	// TODO(mfedosin): stop sending the infrastructure request when we start to receive the cluster value
-	clusterInfra, err := oc.params.ConfigClient.Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	clusterInfraName, err := oc.getClusterInfraName()
 	if err != nil {
-		return fmt.Errorf("Failed to retrieve cluster Infrastructure object: %v", err)
+		return err
 	}
 
-	clusterInfraName := clusterInfra.Status.InfrastructureName
 	clusterNameLabel := machine.Labels["machine.openshift.io/cluster-api-cluster"]
 
 	if clusterNameLabel != clusterInfraName {
@@ -142,21 +144,12 @@ func (oc *OpenstackClient) Create(ctx context.Context, machine *machinev1.Machin
 		return oc.handleMachineError(machine, verr, createEventAction)
 	}
 
-	instance, err := oc.instanceExists(machine)
-	if err != nil {
-		return err
-	}
-	if instance != nil {
-		klog.Infof("Skipped creating a VM that already exists.\n")
-		return nil
-	}
-
 	// Here we check whether we want to create a new instance or recreate the destroyed
 	// one. If this is the second case, we have to return an error, because if we just
 	// create an instance with the old name, because the CSR for it will not be approved
 	// automatically.
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=1746369
-	if machine.ObjectMeta.Annotations[InstanceStatusAnnotationKey] != "" {
+	if machine.Spec.ProviderID != nil {
 		klog.Errorf("The instance has been destroyed for the machine %v, cannot recreate it.\n", machine.ObjectMeta.Name)
 		verr := apierrors.InvalidMachineConfiguration("the instance has been destroyed for the machine %v, cannot recreate it.\n", machine.ObjectMeta.Name)
 
@@ -256,7 +249,7 @@ func (oc *OpenstackClient) Create(ctx context.Context, machine *machinev1.Machin
 		}
 	}
 
-	instance, err = machineService.InstanceCreate(clusterName, machine.Name, &clusterSpec, providerSpec, userDataRendered, providerSpec.KeyName, oc.params.ConfigClient)
+	instance, err := machineService.InstanceCreate(clusterName, machine.Name, &clusterSpec, providerSpec, userDataRendered, providerSpec.KeyName, oc.params.ConfigClient)
 
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.CreateMachine(
@@ -265,7 +258,7 @@ func (oc *OpenstackClient) Create(ctx context.Context, machine *machinev1.Machin
 	instanceCreateTimeout := getTimeout("CLUSTER_API_OPENSTACK_INSTANCE_CREATE_TIMEOUT", TimeoutInstanceCreate)
 	instanceCreateTimeout = instanceCreateTimeout * time.Minute
 	err = util.PollImmediate(RetryIntervalInstanceStatus, instanceCreateTimeout, func() (bool, error) {
-		instance, err := machineService.GetInstance(instance.ID)
+		instance, err = machineService.GetInstance(instance.ID)
 		if err != nil {
 			return false, nil
 		}
@@ -291,7 +284,7 @@ func (oc *OpenstackClient) Create(ctx context.Context, machine *machinev1.Machin
 	}
 
 	oc.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Created machine %v", machine.Name)
-	return oc.updateAnnotation(machine, instance.ID, clusterInfraName)
+	return oc.updateAnnotation(machine, instance, clusterInfraName)
 }
 
 func (oc *OpenstackClient) Delete(ctx context.Context, machine *machinev1.Machine) error {
@@ -310,7 +303,7 @@ func (oc *OpenstackClient) Delete(ctx context.Context, machine *machinev1.Machin
 		return nil
 	}
 
-	id := machine.ObjectMeta.Annotations[openstack.OpenstackIdAnnotationKey]
+	id := machine.ObjectMeta.Annotations[OpenstackIdAnnotationKey]
 	err = machineService.InstanceDelete(id)
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.DeleteMachine(
@@ -322,92 +315,16 @@ func (oc *OpenstackClient) Delete(ctx context.Context, machine *machinev1.Machin
 }
 
 func (oc *OpenstackClient) Update(ctx context.Context, machine *machinev1.Machine) error {
-	if err := oc.validateMachine(machine); err != nil {
-		verr := &apierrors.MachineError{
-			Reason:  machinev1.UpdateMachineError,
-			Message: err.Error(),
-		}
-		return oc.handleMachineError(machine, verr, updateEventAction)
-	}
-
-	clusterInfra, err := oc.params.ConfigClient.Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve cluster Infrastructure object: %v", err)
-	}
-
-	status, err := oc.instanceStatus(machine)
+	clusterInfraName, err := oc.getClusterInfraName()
 	if err != nil {
 		return err
 	}
-
-	currentMachine := (*machinev1.Machine)(status)
-	if currentMachine == nil {
-		instance, err := oc.instanceExists(machine)
-		if err != nil {
-			return err
-		}
-		if instance != nil && instance.Status == "ACTIVE" {
-			klog.Infof("Populating current state for boostrap machine %v", machine.ObjectMeta.Name)
-
-			kubeClient := oc.params.KubeClient
-			machineService, err := clients.NewInstanceServiceFromMachine(kubeClient, machine)
-			if err != nil {
-				return err
-			}
-
-			err = machineService.SetMachineLabels(machine, instance.ID)
-			if err != nil {
-				return nil
-			}
-
-			return oc.updateAnnotation(machine, instance.ID, clusterInfra.Status.InfrastructureName)
-		} else {
-			return fmt.Errorf("Cannot retrieve current state to update machine %v", machine.ObjectMeta.Name)
-		}
+	instance, err := oc.instanceExists(machine)
+	if err != nil {
+		return fmt.Errorf("error fetching OpenStack server for machine %s: %w", machine.Name, err)
 	}
 
-	if !oc.requiresUpdate(currentMachine, machine) {
-		return nil
-	}
-
-	if _, ok := currentMachine.Labels["node-role.kubernetes.io/master"]; ok {
-		// In this conditional block, Machine is Control Plane
-		// TODO: add master inplace
-		klog.Errorf("master inplace update failed: not supported")
-		return oc.handleMachineError(machine, apierrors.UpdateMachine(
-			"master inplace update failed: not supported"), updateEventAction)
-	} else {
-		// In this conditional block, Machine is Compute Node
-		klog.Infof("re-creating machine %s for update.", currentMachine.ObjectMeta.Name)
-		err = oc.Create(ctx, machine)
-		if err != nil {
-			klog.Errorf("create machine %s for update failed: %v", machine.ObjectMeta.Name, err)
-			return fmt.Errorf("Cannot create machine %s: %v", machine.ObjectMeta.Name, err)
-		}
-
-		err = oc.Delete(ctx, currentMachine)
-		if err != nil {
-			klog.Errorf("delete machine %s for update failed: %v", currentMachine.ObjectMeta.Name, err)
-			return fmt.Errorf("Cannot delete machine %s: %v", currentMachine.ObjectMeta.Name, err)
-		}
-		instanceDeleteTimeout := getTimeout("CLUSTER_API_OPENSTACK_INSTANCE_DELETE_TIMEOUT", TimeoutInstanceDelete)
-		instanceDeleteTimeout = instanceDeleteTimeout * time.Minute
-		err = util.PollImmediate(RetryIntervalInstanceStatus, instanceDeleteTimeout, func() (bool, error) {
-			instance, err := oc.instanceExists(machine)
-			if err != nil {
-				return false, nil
-			}
-			return instance == nil, nil
-		})
-		if err != nil {
-			return oc.handleMachineError(machine, apierrors.DeleteMachine(
-				"error deleting Openstack instance: %v", err), updateEventAction)
-		}
-		klog.Infof("Successfully updated machine %s", currentMachine.ObjectMeta.Name)
-	}
-
-	oc.eventRecorder.Eventf(currentMachine, corev1.EventTypeNormal, "Updated", "Updated machine %v", currentMachine.ObjectMeta.Name)
-	return nil
+	return oc.updateAnnotation(machine, instance, clusterInfraName)
 }
 
 func (oc *OpenstackClient) Exists(ctx context.Context, machine *machinev1.Machine) (bool, error) {
@@ -418,132 +335,56 @@ func (oc *OpenstackClient) Exists(ctx context.Context, machine *machinev1.Machin
 	return instance != nil, err
 }
 
-func getIPsFromInstance(instance *clients.Instance) (map[string]string, error) {
-	if instance.AccessIPv4 != "" && net.ParseIP(instance.AccessIPv4) != nil {
-		return map[string]string{
-			"": instance.AccessIPv4,
-		}, nil
-	}
+func getIPsFromInstance(instance *clients.Instance) ([]corev1.NodeAddress, error) {
 	type networkInterface struct {
 		Address string  `json:"addr"`
 		Version float64 `json:"version"`
 		Type    string  `json:"OS-EXT-IPS:type"`
 	}
-	addrMap := map[string]string{}
 
-	for networkName, b := range instance.Addresses {
+	var nodeAddresses []corev1.NodeAddress
+
+	// This is heavily based on the related upstream code:
+	// https://github.com/kubernetes-sigs/cluster-api-provider-openstack/blob/244d31b1d583ee9e760d2bc2f18a80e1fc61f5eb/pkg/cloud/services/compute/instance_types.go#L131-L183
+	for _, b := range instance.Addresses {
 		list, err := json.Marshal(b)
 		if err != nil {
-			return nil, fmt.Errorf("extract IP from instance err: %v", err)
+			return nil, fmt.Errorf("error marshalling addresses for instance %s: %w", instance.ID, err)
 		}
-		var networks []interface{}
-		json.Unmarshal(list, &networks)
-		for _, network := range networks {
-			var netInterface networkInterface
-			b, _ := json.Marshal(network)
-			json.Unmarshal(b, &netInterface)
-			if netInterface.Version == 4.0 {
-				addrMap[networkName] = netInterface.Address
+		var interfaceList []networkInterface
+		err = json.Unmarshal(list, &interfaceList)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshalling addresses for instance %s: %w", instance.ID, err)
+		}
+
+		for i := range interfaceList {
+			address := &interfaceList[i]
+
+			// Only consider IPv4
+			if address.Version != 4 {
+				klog.V(6).Info("Ignoring IPv%d address %s: only IPv4 is supported", address.Version, address.Address)
+				continue
 			}
-		}
-	}
-	if len(addrMap) == 0 {
-		return nil, fmt.Errorf("extract IP from instance err")
-	}
 
-	return addrMap, nil
-}
+			var addressType corev1.NodeAddressType
+			switch address.Type {
+			case "floating":
+				addressType = corev1.NodeExternalIP
+			case "fixed":
+				addressType = corev1.NodeInternalIP
+			default:
+				klog.V(6).Info("Ignoring address %s with unknown type '%s'", address.Address, address.Type)
+				continue
+			}
 
-func getNetworkBySubnet(client *gophercloud.ServiceClient, subnetID string) (*networks.Network, error) {
-	subnet, err := subnets.Get(client, subnetID).Extract()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get subnet %s, %v", subnetID, err)
-	}
-
-	network, err := networks.Get(client, subnet.NetworkID).Extract()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get network %s, %v", subnet.NetworkID, err)
-	}
-	return network, nil
-}
-
-func getNetworkByPrimaryNetworkTag(client *gophercloud.ServiceClient, primaryNetworkTag string) (*networks.Network, error) {
-	opts := networks.ListOpts{
-		Tags: primaryNetworkTag,
-	}
-
-	allPages, err := networks.List(client, opts).AllPages()
-	if err != nil {
-		return nil, err
-	}
-
-	allNetworks, err := networks.ExtractNetworks(allPages)
-	if err != nil {
-		return nil, err
-	}
-
-	switch len(allNetworks) {
-	case 0:
-		return nil, fmt.Errorf("There are no networks with primary network tag: %v", primaryNetworkTag)
-	case 1:
-		return &allNetworks[0], nil
-	}
-	return nil, fmt.Errorf("Too many networks with the same primary network tag: %v", primaryNetworkTag)
-}
-
-func (oc *OpenstackClient) getPrimaryMachineIP(mapAddr map[string]string, machine *machinev1.Machine, clusterInfraName string) (string, error) {
-	// If there is only one network in the list, we consider it as the primary one
-	if len(mapAddr) == 1 {
-		for _, addr := range mapAddr {
-			return addr, nil
+			nodeAddresses = append(nodeAddresses, corev1.NodeAddress{
+				Type:    addressType,
+				Address: address.Address,
+			})
 		}
 	}
 
-	config, err := openstackconfigv1.MachineSpecFromProviderSpec(machine.Spec.ProviderSpec)
-	if err != nil {
-		return "", fmt.Errorf("Invalid provider spec for machine %s", machine.Name)
-	}
-
-	// PrimarySubnet should always be set in the machine api in 4.6
-	primarySubnet := config.PrimarySubnet
-
-	cloud, err := clients.GetCloud(oc.params.KubeClient, machine)
-	if err != nil {
-		return "", err
-	}
-	provider, err := clients.GetProviderClient(cloud, clients.GetCACertificate(oc.params.KubeClient))
-	if err != nil {
-		return "", err
-	}
-	netClient, err := gophercloudopenstack.NewNetworkV2(provider, gophercloud.EndpointOpts{
-		Region: cloud.RegionName,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	var primaryNetwork *networks.Network
-	if primarySubnet != "" {
-		primaryNetwork, err = getNetworkBySubnet(netClient, primarySubnet)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		// Support legacy versions
-		primaryNetworkTag := clusterInfraName + "-primaryClusterNetwork"
-		primaryNetwork, err = getNetworkByPrimaryNetworkTag(netClient, primaryNetworkTag)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	for networkName, addr := range mapAddr {
-		if networkName == primaryNetwork.Name {
-			return addr, nil
-		}
-	}
-
-	return "", fmt.Errorf("No primary network was found for the machine %v", machine.Name)
+	return nodeAddresses, nil
 }
 
 // If the OpenstackClient has a client for updating Machine objects, this will set
@@ -575,50 +416,49 @@ func (oc *OpenstackClient) handleMachineError(machine *machinev1.Machine, err *a
 	return err
 }
 
-func (oc *OpenstackClient) updateAnnotation(machine *machinev1.Machine, instanceID string, clusterInfraName string) error {
+func (oc *OpenstackClient) updateAnnotation(machine *machinev1.Machine, instance *clients.Instance, clusterInfraName string) error {
+	providerID := fmt.Sprintf("openstack:///%s", instance.ID)
+
+	if machine.Spec.ProviderID != nil {
+		// We can't recover if the provider ID has changed
+		if *machine.Spec.ProviderID != providerID {
+			verr := apierrors.InvalidMachineConfiguration("providerID has changed from %s to %s. This is not supported. "+
+				"The recommended action is to delete and recreate this machine.", *machine.Spec.ProviderID, providerID)
+			return oc.handleMachineError(machine, verr, updateEventAction)
+		}
+	} else {
+		machine.Spec.ProviderID = &providerID
+	}
+
 	statusCopy := *machine.Status.DeepCopy()
 
 	if machine.ObjectMeta.Annotations == nil {
 		machine.ObjectMeta.Annotations = make(map[string]string)
 	}
-	machine.ObjectMeta.Annotations[openstack.OpenstackIdAnnotationKey] = instanceID
-	instance, _ := oc.instanceExists(machine)
-	mapAddr, err := getIPsFromInstance(instance)
-	if err != nil {
-		return err
-	}
-
-	primaryIP, err := oc.getPrimaryMachineIP(mapAddr, machine, clusterInfraName)
-	if err != nil {
-		return err
-	}
-	klog.Infof("Found the primary address for the machine %v: %v", machine.Name, primaryIP)
-
-	machine.ObjectMeta.Annotations[openstack.OpenstackIPAnnotationKey] = primaryIP
+	machine.ObjectMeta.Annotations[OpenstackIdAnnotationKey] = instance.ID
 	machine.ObjectMeta.Annotations[MachineInstanceStateAnnotationName] = instance.Status
 
 	if err := oc.client.Update(context.TODO(), machine); err != nil {
 		return err
 	}
 
-	networkAddresses := []corev1.NodeAddress{}
-	networkAddresses = append(networkAddresses, corev1.NodeAddress{
-		Type:    corev1.NodeInternalIP,
-		Address: primaryIP,
-	})
+	nodeAddresses, err := getIPsFromInstance(instance)
+	if err != nil {
+		return err
+	}
 
-	networkAddresses = append(networkAddresses, corev1.NodeAddress{
+	nodeAddresses = append(nodeAddresses, corev1.NodeAddress{
 		Type:    corev1.NodeHostName,
 		Address: machine.Name,
 	})
 
-	networkAddresses = append(networkAddresses, corev1.NodeAddress{
+	nodeAddresses = append(nodeAddresses, corev1.NodeAddress{
 		Type:    corev1.NodeInternalDNS,
 		Address: machine.Name,
 	})
 
 	machineCopy := machine.DeepCopy()
-	machineCopy.Status.Addresses = networkAddresses
+	machineCopy.Status.Addresses = nodeAddresses
 
 	if !equality.Semantic.DeepEqual(machine.Status.Addresses, machineCopy.Status.Addresses) {
 		if err := oc.client.Status().Update(context.TODO(), machineCopy); err != nil {
@@ -627,17 +467,7 @@ func (oc *OpenstackClient) updateAnnotation(machine *machinev1.Machine, instance
 	}
 
 	machine.Status = statusCopy
-	return oc.updateInstanceStatus(machine)
-}
-
-func (oc *OpenstackClient) requiresUpdate(a *machinev1.Machine, b *machinev1.Machine) bool {
-	if a == nil || b == nil {
-		return true
-	}
-	// Do not want status changes. Do want changes that impact machine provisioning
-	return !reflect.DeepEqual(a.Spec.ObjectMeta, b.Spec.ObjectMeta) ||
-		!reflect.DeepEqual(a.Spec.ProviderSpec, b.Spec.ProviderSpec) ||
-		a.ObjectMeta.Name != b.ObjectMeta.Name
+	return oc.client.Update(context.TODO(), machine)
 }
 
 func (oc *OpenstackClient) instanceExists(machine *machinev1.Machine) (instance *clients.Instance, err error) {
