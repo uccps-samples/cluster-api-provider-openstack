@@ -17,7 +17,6 @@ require (
 	k8s.io/apimachinery v0.23.0
 	k8s.io/client-go v0.23.0
 	k8s.io/cluster-bootstrap v0.0.0-20190202014938-c9acc0c1bea2
-	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.30.0
 	sigs.k8s.io/controller-runtime v0.11.0
 	sigs.k8s.io/yaml v1.3.0
