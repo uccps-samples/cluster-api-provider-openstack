@@ -13,10 +13,10 @@ require (
 	github.com/openshift/client-go v0.0.0-20211209144617-7385dd6338e3
 	github.com/openshift/machine-api-operator v0.2.1-0.20211223185609-7ba373c29f8f
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.23.0
-	k8s.io/apimachinery v0.23.0
+	k8s.io/api v0.23.1
+	k8s.io/apimachinery v0.23.1
 	k8s.io/client-go v0.23.0
-	k8s.io/cluster-bootstrap v0.0.0-20190202014938-c9acc0c1bea2
+	k8s.io/cluster-bootstrap v0.23.1
 	k8s.io/klog/v2 v2.30.0
 	sigs.k8s.io/controller-runtime v0.11.0
 	sigs.k8s.io/yaml v1.3.0
