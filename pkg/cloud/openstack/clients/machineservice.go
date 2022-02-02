@@ -545,6 +545,11 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 					return nil, err
 				}
 				for _, snet := range snetResults {
+					// Under some circumstances the filter ignores the NetworkID
+					// See https://bugzilla.redhat.com/show_bug.cgi?id=2033862
+					if snet.NetworkID != netID {
+						continue
+					}
 					nets = append(nets, openstackconfigv1.PortOpts{
 						NetworkID:    snet.NetworkID,
 						NameSuffix:   snet.ID,
