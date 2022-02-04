@@ -153,3 +153,7 @@ dist: build-cross
 
 .PHONY: build clean cover docs fmt lint realclean \
 	relnotes test translation version build-cross dist unit
+
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests
+	hack/e2e.sh
