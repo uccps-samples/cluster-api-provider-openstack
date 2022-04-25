@@ -43,7 +43,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 
-	infrav1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	infrav1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha5"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/services/networking"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/cloud/services/networking/mock_networking"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/scope"
@@ -494,9 +494,9 @@ func TestService_getImageID(t *testing.T) {
 			tt.expect(mockComputeClient.EXPECT())
 
 			s := Service{
-				projectID: "",
 				scope: &scope.Scope{
-					Logger: logr.Discard(),
+					ProjectID: "",
+					Logger:    logr.Discard(),
 				},
 				computeService:    mockComputeClient,
 				networkingService: &networking.Service{},
@@ -997,9 +997,9 @@ func TestService_ReconcileInstance(t *testing.T) {
 			tt.expect(computeRecorder, networkRecorder)
 
 			s := Service{
-				projectID: "",
 				scope: &scope.Scope{
-					Logger: logr.Discard(),
+					Logger:    logr.Discard(),
+					ProjectID: "",
 				},
 				computeService: mockComputeClient,
 				networkingService: networking.NewTestService(
@@ -1108,9 +1108,9 @@ func TestService_DeleteInstance(t *testing.T) {
 			tt.expect(computeRecorder, networkRecorder)
 
 			s := Service{
-				projectID: "",
 				scope: &scope.Scope{
-					Logger: logr.Discard(),
+					ProjectID: "",
+					Logger:    logr.Discard(),
 				},
 				computeService: mockComputeClient,
 				networkingService: networking.NewTestService(

@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/cluster-api/util"
 
-	infrav1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	infrav1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha5"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/record"
 	capoerrors "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors"
 )
@@ -290,7 +290,7 @@ func (s *Service) getVolumeByName(name string) (*volumes.Volume, error) {
 	listOpts := volumes.ListOpts{
 		AllTenants: false,
 		Name:       name,
-		TenantID:   s.projectID,
+		TenantID:   s.scope.ProjectID,
 	}
 	volumeList, err := s.computeService.ListVolumes(listOpts)
 	if err != nil {

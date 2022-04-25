@@ -45,7 +45,7 @@ Note: You can use [the template file](https://github.com/kubernetes-sigs/cluster
 # Using 'external-cloud-provider' flavor
 clusterctl generate cluster capi-quickstart \
   --flavor external-cloud-provider \
-  --kubernetes-version v1.21.3 \
+  --kubernetes-version v1.23.5 \
   --control-plane-machine-count=3 \
   --worker-machine-count=1 \
   > capi-quickstart.yaml
@@ -53,7 +53,7 @@ clusterctl generate cluster capi-quickstart \
 # Using 'without-lb' flavor
 clusterctl generate cluster capi-quickstart \
   --flavor without-lb \
-  --kubernetes-version v1.21.3 \
+  --kubernetes-version v1.23.5 \
   --control-plane-machine-count=1 \
   --worker-machine-count=1 \
   > capi-quickstart.yaml
@@ -98,7 +98,7 @@ The following variables are set.
  :----- | :--------
 | OPENSTACK_CLOUD | The cloud name which is used as second argument |
 | OPENSTACK_CLOUD_YAML_B64 | The secret used by Cluster API Provider OpenStack accessing OpenStack |
-| OPENSTACK_CLOUD_PROVIDER_CONF_B64 | The content of [cloud.conf](https://kubernetes.io/docs/concepts/cluster-administration/cloud-providers/#cloud-conf) which is used by OpenStack cloud provider |
+| OPENSTACK_CLOUD_PROVIDER_CONF_B64 | The content of [cloud.conf](https://git.k8s.io/cloud-provider-openstack/docs/openstack-cloud-controller-manager/using-openstack-cloud-controller-manager.md#deploy-a-kubernetes-cluster-with-openstack-cloud-controller-manager-using-kubeadm) which is used by OpenStack cloud provider |
 | OPENSTACK_CLOUD_CACERT_B64 | (Optional) The content of your custom CA file which can be specified in your clouds.yaml by `ca-file` |
 
 Note: Only the [external cloud provider](https://cluster-api-openstack.sigs.k8s.io/topics/external-cloud-provider.html) supports [Application Credentials](https://docs.openstack.org/keystone/latest/user/application_credentials.html).
@@ -184,7 +184,7 @@ If you have a complex query that you want to use to lookup a network, then you c
 By using filters to look up a network, please note that it is possible to get multiple networks as a result. This should not be a problem, however please test your filters with `openstack network list` to be certain that it returns the networks you want. Please refer to the following usage example:
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -200,7 +200,7 @@ spec:
 You can specify multiple networks (or subnets) to connect your server to. To do this, simply add another entry in the networks array. The following example connects the server to 3 different networks:
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -219,7 +219,7 @@ spec:
 Rather than just using a network, you have the option of specifying a specific subnet to connect your server to. The following is an example of how to specify a specific subnet of a network to use for your server.
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -238,7 +238,7 @@ spec:
 A server can also be connected to networks by describing what ports to create. Describing a server's connection with `ports` allows for finer and more advanced configuration. For example, you can specify per-port security groups, fixed IPs, VNIC type or profile.
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -271,7 +271,7 @@ Any such ports are created in addition to ports used for connections to networks
 Also, `port security` can be applied to specific port to enable/disable the `port security` on that port; When not set, it takes the value of the corresponding field at the network level.
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -314,7 +314,7 @@ If this is not flexible enough, pre-existing security groups can be added to the
 spec of an `OpenStackMachineTemplate`, e.g.:
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: ${CLUSTER_NAME}-control-plane
@@ -330,7 +330,7 @@ spec:
 You have the ability to tag all resources created by the cluster in the `OpenStackCluster` spec. Here is an example how to configure tagging:
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackCluster
 metadata:
   name: <cluster-name>
@@ -343,7 +343,7 @@ spec:
 To tag resources specific to a machine, add a value to the tags field in the `OpenStackMachineTemplate` spec like this:
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -358,7 +358,7 @@ spec:
 You also have the option to add metadata to instances. Here is a usage example:
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
 kind: OpenStackMachineTemplate
 metadata:
   name: <cluster-name>-controlplane
@@ -374,7 +374,7 @@ spec:
 For example in `OpenStackMachineTemplate` set `spec.rootVolume.diskSize` to something greater than `0` means boot from volume.
 
    ```yaml
-   apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+   apiVersion: infrastructure.cluster.x-k8s.io/v1alpha5
    kind: OpenStackMachineTemplate
    metadata:
      name: <cluster-name>-controlplane
