@@ -55,7 +55,7 @@ import (
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	infrav1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	infrav1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha5"
 	capoerrors "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors"
 	"sigs.k8s.io/cluster-api-provider-openstack/test/e2e/shared"
 )
@@ -833,7 +833,7 @@ func isCloudProviderInitialized(taints []corev1.Taint) bool {
 }
 
 func createTestVolumeType(e2eCtx *shared.E2EContext) {
-	providerClient, clientOpts, err := shared.GetAdminProviderClient(e2eCtx)
+	providerClient, clientOpts, _, err := shared.GetAdminProviderClient(e2eCtx)
 	Expect(err).NotTo(HaveOccurred())
 
 	volumeClient, err := openstack.NewBlockStorageV3(providerClient, gophercloud.EndpointOpts{Region: clientOpts.RegionName})

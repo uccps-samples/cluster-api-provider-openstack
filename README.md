@@ -37,22 +37,22 @@ previous cluster managers such as [kops][kops] and
 
 This provider's versions are compatible with the following versions of Cluster API:
 
-|                                    | v1alpha3 (v0.3) | v1alpha4 (v0.4) | v1beta1 (v1.0) |
+|                                    | v1alpha3 (v0.3) | v1alpha4 (v0.4) | v1beta1 (v1.1) |
 | ---------------------------------- | --------------- | --------------- | -------------- |
-| OpenStack Provider v1alpha3 (v0.3) | ✓              |                 |                |
-| OpenStack Provider v1alpha4 (v0.4) |                 | ✓              |                |
-| OpenStack Provider v1alpha4 (v0.5) |                 |                 | ✓             |
-| OpenStack Provider v1beta1         |                 |                 | ✓             |
+| OpenStack Provider v1alpha3 (v0.3) | ✓               |                 |                |
+| OpenStack Provider v1alpha4 (v0.4) |                 | ✓               |                |
+| OpenStack Provider v1alpha4 (v0.5) |                 |                 | ✓              |
+| OpenStack Provider v1alpha5        |                 |                 | ✓              |
 
 
 This provider's versions are able to install and manage the following versions of Kubernetes:
 
-|                                    | v1.16 | v1.17 | v1.18 | v1.19 | v1.20 | v1.21 |
-| ---------------------------------- | ----- | ----- | ----- | ----- | ----- | ----- |
-| OpenStack Provider v1alpha3 (v0.3) | ✓    | ✓    | ✓     | ✓    | ✓    |       |
-| OpenStack Provider v1alpha4 (v0.4) |       |       |       |       | ✓    | ✓     |
-| OpenStack Provider v1alpha4 (v0.5) |       |       |       |       | ✓    | ✓     |
-| OpenStack Provider v1beta1         |       |       |       |       |       | ✓     |
+|                                    | v1.16 | v1.17 | v1.18 | v1.19 | v1.20 | v1.21 | v1.22 | v1.23 |
+| ---------------------------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| OpenStack Provider v1alpha3 (v0.3) | ✓     | ✓     | ✓     | ✓     | ✓     |       |       |       |
+| OpenStack Provider v1alpha4 (v0.4) |       |       |       |       | ✓     |       |       |       |
+| OpenStack Provider v1alpha4 (v0.5) |       |       |       |       | ✓     | ✓     | +     | +     |
+| OpenStack Provider v1alpha5        |       |       |       |       |       | ✓     | +     | ✓     |
 
 This provider's versions are able to install Kubernetes to the following versions of OpenStack:
 
@@ -61,7 +61,7 @@ This provider's versions are able to install Kubernetes to the following version
 | OpenStack Provider v1alpha3 (v0.3) | +    | +      | +     | ✓     | ✓     | ✓      | ✓        |         |      |
 | OpenStack Provider v1alpha4 (v0.4) | +    | +      | +     | +     | +     | +      | ✓        |         |      |
 | OpenStack Provider v1alpha4 (v0.5) | +    | +      | +     | +     | +     | +      | ✓        |         |      |
-| OpenStack Provider v1beta1         | +    | +      | +     | +     | +     | +      | ✓        | ✓       | ✓    |
+| OpenStack Provider v1alpha5        | +    | +      | +     | +     | +     | +      | ✓        | ✓       | ✓    |
 
 Test status:
 
@@ -74,6 +74,8 @@ Each version of Cluster API for OpenStack will attempt to support two Kubernetes
 policy may be made to more closely aligned with other providers in the Cluster API ecosystem.
 
 **NOTE:** The minimum microversion of CAPI using nova is `2.53` now due to `server tags` support, see [code](https://github.com/kubernetes-sigs/cluster-api-provider-openstack/blob/c052e7e600f0e5ebddc839c08746bb636e79be87/pkg/cloud/services/compute/service.go#L38) for additional information.
+
+**NOTE:** We require Keystone v3 for authentication.
 
 ------
 
