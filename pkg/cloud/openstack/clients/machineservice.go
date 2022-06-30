@@ -663,6 +663,18 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 		if err != nil {
 			return nil, fmt.Errorf("Failed to create port err: %v", err)
 		}
+		defer func() {
+			// If the server is created in Nova, the lifetime of the associated ports will be
+			// bound to it. This deferred cleanup function tackles the case where a port was created
+			// but never attached to a server. In that case, the port must be removed manually.
+			if server == nil {
+				if err := ports.Delete(is.networkClient, port.ID).ExtractErr(); err != nil {
+					klog.Infof("Failed to delete stale port %q", port.ID)
+				} else {
+					klog.Infof("Deleted stale port %q", port.ID)
+				}
+			}
+		}()
 
 		portTags := deduplicateList(append(machineTags, portOpt.Tags...))
 		_, err = attributestags.ReplaceAll(is.networkClient, "ports", port.ID, attributestags.ReplaceAllOpts{
@@ -675,10 +687,20 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 		})
 
 		if config.Trunk == true {
-			_, err := getOrCreateTrunk(is, port, machineTags)
+			trunk, err := getOrCreateTrunk(is, port, machineTags)
 			if err != nil {
 				return nil, err
 			}
+			defer func() {
+				// We need to cleanup the trunks before we remove the staled ports.
+				if server == nil {
+					if err := trunks.Delete(is.networkClient, trunk.ID).ExtractErr(); err != nil {
+						klog.Infof("Failed to delete stale trunk %q", trunk.ID)
+					} else {
+						klog.Infof("Deleted stale trunk %q", trunk.ID)
+					}
+				}
+			}()
 		}
 	}
 
