@@ -303,8 +303,7 @@ func (oc *OpenstackClient) Delete(ctx context.Context, machine *machinev1.Machin
 		return nil
 	}
 
-	id := machine.ObjectMeta.Annotations[OpenstackIdAnnotationKey]
-	err = machineService.InstanceDelete(id)
+	err = machineService.InstanceDelete(instance.ID)
 	if err != nil {
 		return oc.handleMachineError(machine, apierrors.DeleteMachine(
 			"error deleting Openstack instance: %v", err), deleteEventAction)
