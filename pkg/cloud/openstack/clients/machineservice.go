@@ -569,7 +569,7 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 	}
 	// Get all network UUIDs
 	var nets []openstackconfigv1.PortOpts
-	netsWithoutAllowedAddressPairs := map[string]struct{}{}
+	subnetsWithoutAllowedAddressPairs := map[string]struct{}{}
 	for _, net := range config.Networks {
 		opts := networks.ListOpts(net.Filter)
 		opts.ID = net.UUID
@@ -578,9 +578,6 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 			return nil, err
 		}
 		for _, netID := range ids {
-			if net.NoAllowedAddressPairs {
-				netsWithoutAllowedAddressPairs[netID] = struct{}{}
-			}
 			if net.Subnets == nil {
 				nets = append(nets, openstackconfigv1.PortOpts{
 					NetworkID:    netID,
@@ -612,6 +609,9 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 					// See https://bugzilla.redhat.com/show_bug.cgi?id=2033862
 					if snet.NetworkID != netID {
 						continue
+					}
+					if net.NoAllowedAddressPairs {
+						subnetsWithoutAllowedAddressPairs[snet.ID] = struct{}{}
 					}
 					nets = append(nets, openstackconfigv1.PortOpts{
 						NetworkID:    snet.NetworkID,
@@ -655,7 +655,7 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 		}
 		portOpt.SecurityGroups = &securityGroups
 		portOpt.AllowedAddressPairs = allowedAddressPairs
-		if _, ok := netsWithoutAllowedAddressPairs[portOpt.NetworkID]; ok {
+		if _, ok := subnetsWithoutAllowedAddressPairs[portOpt.NameSuffix]; ok {
 			portOpt.AllowedAddressPairs = []openstackconfigv1.AddressPair{}
 		}
 
