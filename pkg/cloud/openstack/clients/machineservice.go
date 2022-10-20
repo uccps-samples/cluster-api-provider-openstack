@@ -587,6 +587,9 @@ func (is *InstanceService) InstanceCreate(clusterName string, name string, clust
 					Profile:      net.Profile,
 					PortSecurity: net.PortSecurity,
 				})
+				if net.NoAllowedAddressPairs {
+					subnetsWithoutAllowedAddressPairs[net.UUID] = struct{}{}
+				}
 			}
 
 			for _, snetParam := range net.Subnets {
