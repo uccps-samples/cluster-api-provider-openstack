@@ -1,0 +1,8 @@
+# See the CONTRIBUTING docs: https://github.com/uccps-samples/origin/blob/master/CONTRIBUTING.adoc
+
+approvers:
+  - shiftstack-team
+reviewers:
+  - shiftstack-team
+component: "Cloud Compute"
+subcomponent: "OpenStack Provider"
